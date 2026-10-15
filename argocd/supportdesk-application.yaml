@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: supportdesk
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/singireddyshreyas/devops-csp.git
+    targetRevision: main
+    path: helm/taskboard
+    helm:
+      parameters:
+        - name: backend.image
+          value: ghcr.io/singireddyshreyas/supportdesk-backend
+        - name: frontend.image
+          value: ghcr.io/singireddyshreyas/supportdesk-frontend
+        # Replace both dev values with a published commit SHA for a demo sync.
+        - name: backend.tag
+          value: dev
+        - name: frontend.tag
+          value: dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: supportdesk
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true

@@ -1,20 +1,20 @@
 frontend:
-  image: ghcr.io/YOUR_ORG/taskboard-frontend
-  tag: latest
+  image: ghcr.io/singireddyshreyas/supportdesk-frontend
+  tag: dev
 backend:
-  image: ghcr.io/YOUR_ORG/taskboard-backend
-  tag: latest
+  image: ghcr.io/singireddyshreyas/supportdesk-backend
+  tag: dev
 replicaCount: 2
-namespace: taskboard
+namespace: supportdesk
 imagePullSecrets: []
 postgres:
-  host: taskboard-postgres
-  database: taskboard
-  username: taskboard
-  password: taskboard
+  host: supportdesk-postgres
+  database: supportdesk
+  username: supportdesk
+  password: supportdesk
 ingress:
   enabled: false
-  host: taskboard.local
+  host: supportdesk.local
 hpa:
   enabled: true
   minReplicas: 2

@@ -1,9 +1,226 @@
-import React,{useEffect,useState} from 'react'; import {createRoot} from 'react-dom/client'; import './styles.css';
-const API='/api';
-function App(){const [tasks,setTasks]=useState([]),[stats,setStats]=useState({total:0,todo:0,inProgress:0,done:0}),[filter,setFilter]=useState('ALL'),[showForm,setShowForm]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState('');
- const load=async()=>{try{setError('');const [a,b]=await Promise.all([fetch(`${API}/tasks`),fetch(`${API}/tasks/stats`)]);if(!a.ok||!b.ok)throw Error('Backend unavailable');setTasks(await a.json());setStats(await b.json())}catch(e){setError(e.message)}finally{setLoading(false)}};
- useEffect(()=>{load()},[]); const visible=filter==='ALL'?tasks:tasks.filter(t=>t.status===filter);
- const update=async(t)=>{const next=t.status==='TODO'?'IN_PROGRESS':t.status==='IN_PROGRESS'?'DONE':'TODO';await fetch(`${API}/tasks/${t.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({...t,status:next})});load()};
- const create=async(e)=>{e.preventDefault();const f=new FormData(e.currentTarget);await fetch(`${API}/tasks`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:f.get('title'),description:f.get('description'),priority:f.get('priority'),assignee:f.get('assignee'),status:'TODO'})});e.currentTarget.reset();setShowForm(false);load()};
- return <div className="app"><aside className="sidebar"><div className="brand"><span className="brand-mark">T</span><div><b>TaskBoard</b><small>DevOps Capstone</small></div></div><nav><a className="active">▦ <span>Dashboard</span></a><a>✓ <span>My Tasks</span></a><a>◫ <span>Projects</span></a><a>◌ <span>Activity</span></a></nav><div className="side-bottom"><div className="upgrade"><strong>Ship with confidence.</strong><p>Build, deploy and observe your application.</p></div><div className="profile"><div className="avatar">NR</div><div><b>Nensi Ravaliya</b><small>Developer</small></div><span>⋮</span></div></div></aside><main className="main"><header><div><p className="eyebrow">WORKSPACE / OVERVIEW</p><h1>Good morning, Nensi 👋</h1><p className="muted">Here’s what’s happening with your team today.</p></div><button className="primary" onClick={()=>setShowForm(true)}>＋ New task</button></header>{error&&<div className="alert">⚠ {error}. Start the backend and PostgreSQL, then refresh.</div>}<section className="stats"><Stat label="Total tasks" value={stats.total} icon="▦"/><Stat label="To do" value={stats.todo} icon="○"/><Stat label="In progress" value={stats.inProgress} icon="◔"/><Stat label="Completed" value={stats.done} icon="✓"/></section><section className="content-grid"><div className="panel tasks-panel"><div className="panel-head"><div><h2>Tasks</h2><p className="muted">Track work across the product team.</p></div><div className="filters">{['ALL','TODO','IN_PROGRESS','DONE'].map(x=><button className={filter===x?'selected':''} onClick={()=>setFilter(x)} key={x}>{x==='ALL'?'All':x.replace('_',' ')}</button>)}</div></div>{loading?<div className="empty">Loading tasks…</div>:<div className="table-wrap"><table><thead><tr><th>Task</th><th>Assignee</th><th>Priority</th><th>Status</th><th></th></tr></thead><tbody>{visible.map(t=><tr key={t.id}><td><div className="task-title"><span className={`dot ${t.status.toLowerCase()}`}></span><div><b>{t.title}</b><small>{t.description}</small></div></div></td><td>{t.assignee}</td><td><span className={`priority ${t.priority.toLowerCase()}`}>{t.priority}</span></td><td><span className={`status ${t.status.toLowerCase()}`}>{t.status.replace('_',' ')}</span></td><td><button className="icon-btn" onClick={()=>update(t)} title="Advance status">↻</button></td></tr>)}</tbody></table>{!visible.length&&<div className="empty">No tasks in this filter.</div>}</div>}</div><aside className="panel activity"><div className="panel-head"><div><h2>Recent activity</h2><p className="muted">Latest workspace events.</p></div></div><Activity icon="✓" text="Monitoring dashboard completed" time="12 min ago"/><Activity icon="◔" text="Release task moved to in progress" time="38 min ago"/><Activity icon="＋" text="New onboarding task created" time="1 hr ago"/><Activity icon="↗" text="Deployment pipeline passed" time="2 hrs ago"/><div className="pipeline"><span>CI</span><i></i><span>Build</span><i></i><span>Scan</span><i></i><span>Deploy</span></div></aside></section>{showForm&&<div className="modal-backdrop"><form className="modal" onSubmit={create}><div className="modal-head"><div><p className="eyebrow">CREATE TASK</p><h2>Add a new task</h2></div><button type="button" className="close" onClick={()=>setShowForm(false)}>×</button></div><label>Task title<input name="title" required placeholder="e.g. Configure production ingress"/></label><label>Description<textarea name="description" placeholder="What needs to be done?"/></label><div className="form-row"><label>Priority<select name="priority"><option>LOW</option><option>MEDIUM</option><option>HIGH</option></select></label><label>Assignee<input name="assignee" defaultValue="Nensi Ravaliya"/></label></div><button className="primary full">Create task</button></form></div>}</main></div>}
-function Stat({label,value,icon}){return <div className="stat"><div className="stat-icon">{icon}</div><div><small>{label}</small><strong>{value}</strong><span>Updated just now</span></div></div>}; function Activity({icon,text,time}){return <div className="activity-row"><span className="activity-icon">{icon}</span><div><b>{text}</b><small>{time}</small></div></div>}; createRoot(document.getElementById('root')).render(<App/>);
+import React, { useEffect, useMemo, useState } from "react";
+import { createRoot } from "react-dom/client";
+import "./styles.css";
+
+const API = "/api";
+const STATUSES = ["OPEN", "IN_PROGRESS", "WAITING", "RESOLVED"];
+const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"];
+const CATEGORIES = ["TECHNICAL", "BILLING", "ACCOUNT", "GENERAL"];
+
+const emptyStats = { total: 0, open: 0, inProgress: 0, waiting: 0, resolved: 0 };
+
+function formatLabel(value) {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function App() {
+  const [tickets, setTickets] = useState([]);
+  const [stats, setStats] = useState(emptyStats);
+  const [filter, setFilter] = useState("ALL");
+  const [showForm, setShowForm] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = async () => {
+    try {
+      setError("");
+      const [ticketsResponse, statsResponse] = await Promise.all([
+        fetch(`${API}/tickets`),
+        fetch(`${API}/tickets/stats`),
+      ]);
+      if (!ticketsResponse.ok || !statsResponse.ok) {
+        throw new Error("SupportDesk API is unavailable");
+      }
+      setTickets(await ticketsResponse.json());
+      setStats(await statsResponse.json());
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const visibleTickets = useMemo(
+    () => (filter === "ALL" ? tickets : tickets.filter((ticket) => ticket.status === filter)),
+    [filter, tickets],
+  );
+
+  const updateStatus = async (ticket) => {
+    const currentIndex = STATUSES.indexOf(ticket.status);
+    const nextStatus = STATUSES[(currentIndex + 1) % STATUSES.length];
+    try {
+      setError("");
+      const response = await fetch(`${API}/tickets/${ticket.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      if (!response.ok) throw new Error("Unable to update the ticket");
+      await load();
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  };
+
+  const removeTicket = async (ticket) => {
+    if (!window.confirm(`Delete ticket “${ticket.subject}”?`)) return;
+    try {
+      setError("");
+      const response = await fetch(`${API}/tickets/${ticket.id}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("Unable to delete the ticket");
+      await load();
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  };
+
+  const createTicket = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    const form = new FormData(event.currentTarget);
+    try {
+      setError("");
+      const response = await fetch(`${API}/tickets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: form.get("subject"),
+          description: form.get("description"),
+          requester: form.get("requester"),
+          category: form.get("category"),
+          priority: form.get("priority"),
+          assignee: form.get("assignee") || "Unassigned",
+          status: "OPEN",
+        }),
+      });
+      if (!response.ok) throw new Error("Unable to create the ticket");
+      event.currentTarget.reset();
+      setShowForm(false);
+      await load();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <span className="brand-mark">S</span>
+          <div>
+            <strong>SupportDesk</strong>
+            <small>Customer operations</small>
+          </div>
+        </div>
+        <nav aria-label="Main navigation">
+          <a className="active" href="#dashboard">▦ <span>Ticket queue</span></a>
+          <a href="#customers">◎ <span>Customers</span></a>
+          <a href="#knowledge">◫ <span>Knowledge base</span></a>
+          <a href="#activity">◌ <span>Activity</span></a>
+        </nav>
+        <div className="sidebar-bottom">
+          <div className="service-note">
+            <strong>Resolve with confidence.</strong>
+            <p>Track every customer conversation from open to resolved.</p>
+          </div>
+          <div className="profile">
+            <div className="avatar">SA</div>
+            <div><strong>Support admin</strong><small>Operations team</small></div>
+          </div>
+        </div>
+      </aside>
+
+      <main className="main-content" id="dashboard">
+        <header className="page-header">
+          <div>
+            <p className="eyebrow">SUPPORT OPERATIONS / OVERVIEW</p>
+            <h1>Good morning, Support team <span aria-hidden="true">👋</span></h1>
+            <p className="muted">Keep customer requests moving and close the loop today.</p>
+          </div>
+          <button className="primary-button" onClick={() => setShowForm(true)}>＋ New ticket</button>
+        </header>
+
+        {error && <div className="alert" role="alert">⚠ {error}. Check the backend and PostgreSQL services, then refresh.</div>}
+
+        <section className="stats-grid" aria-label="Ticket statistics">
+          <Stat label="All tickets" value={stats.total} icon="▦" />
+          <Stat label="Open" value={stats.open} icon="○" tone="blue" />
+          <Stat label="In progress" value={stats.inProgress} icon="◔" tone="amber" />
+          <Stat label="Resolved" value={stats.resolved} icon="✓" tone="green" />
+        </section>
+
+        <section className="dashboard-grid">
+          <div className="panel tickets-panel">
+            <div className="panel-header">
+              <div>
+                <h2>Ticket queue</h2>
+                <p className="muted">Prioritize customer requests across every support channel.</p>
+              </div>
+              <div className="filters" aria-label="Ticket filters">
+                {["ALL", ...STATUSES].map((status) => (
+                  <button className={filter === status ? "selected" : ""} onClick={() => setFilter(status)} key={status}>
+                    {status === "ALL" ? "All" : formatLabel(status)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {loading ? <div className="empty-state">Loading ticket queue…</div> : visibleTickets.length === 0 ? (
+              <div className="empty-state"><strong>No tickets in this view.</strong><span>Create a ticket to start tracking customer support work.</span></div>
+            ) : (
+              <div className="table-scroll">
+                <table>
+                  <thead><tr><th>Ticket</th><th>Requester</th><th>Priority</th><th>Status</th><th>Actions</th></tr></thead>
+                  <tbody>
+                    {visibleTickets.map((ticket) => (
+                      <tr key={ticket.id}>
+                        <td><div className="ticket-cell"><span className={`status-dot ${ticket.status.toLowerCase()}`} /><div><strong>{ticket.subject}</strong><small>#{String(ticket.id).padStart(4, "0")} · {formatLabel(ticket.category)}</small></div></div></td>
+                        <td><span className="requester">{ticket.requester}</span><small className="sub-cell">Assigned to {ticket.assignee}</small></td>
+                        <td><span className={`priority priority-${ticket.priority.toLowerCase()}`}>{formatLabel(ticket.priority)}</span></td>
+                        <td><button className={`status-button status-${ticket.status.toLowerCase()}`} onClick={() => updateStatus(ticket)} title="Advance ticket status">{formatLabel(ticket.status)}</button></td>
+                        <td><button className="delete-button" onClick={() => removeTicket(ticket)} aria-label={`Delete ${ticket.subject}`}>Delete</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <aside className="panel activity-panel" id="activity">
+            <div className="panel-header"><div><h2>Queue health</h2><p className="muted">A quick view of today’s workload.</p></div></div>
+            <div className="health-list">
+              <HealthRow label="Open tickets" value={stats.open} tone="blue" />
+              <HealthRow label="Awaiting customer" value={stats.waiting} tone="amber" />
+              <HealthRow label="Resolved today" value={stats.resolved} tone="green" />
+            </div>
+            <div className="pipeline"><div className="pipeline-title"><strong>Resolution pipeline</strong><span>{stats.total ? Math.round((stats.resolved / stats.total) * 100) : 0}%</span></div><div className="progress-track"><span style={{ width: `${stats.total ? (stats.resolved / stats.total) * 100 : 0}%` }} /></div><small>Tickets resolved from the current queue</small></div>
+          </aside>
+        </section>
+      </main>
+
+      {showForm && <div className="modal-backdrop" role="presentation"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="new-ticket-title"><div className="modal-header"><div><p className="eyebrow">CUSTOMER SUPPORT</p><h2 id="new-ticket-title">Create a ticket</h2></div><button className="close-button" onClick={() => setShowForm(false)} aria-label="Close">×</button></div><form onSubmit={createTicket}><label>Subject<input name="subject" required maxLength="200" placeholder="What does the customer need help with?" /></label><label>Description<textarea name="description" rows="3" placeholder="Add the context the support team needs…" /></label><div className="form-grid"><label>Requester<input name="requester" required defaultValue="Customer" /></label><label>Category<select name="category" defaultValue="GENERAL">{CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></label><label>Priority<select name="priority" defaultValue="MEDIUM">{PRIORITIES.map((priority) => <option key={priority}>{priority}</option>)}</select></label><label>Assignee<input name="assignee" placeholder="Unassigned" /></label></div><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowForm(false)}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? "Creating…" : "Create ticket"}</button></div></form></div></div>}
+    </div>
+  );
+}
+
+function Stat({ label, value, icon, tone = "default" }) {
+  return <div className="stat-card"><div className={`stat-icon ${tone}`}>{icon}</div><div><small>{label}</small><strong>{value}</strong><span>Updated just now</span></div></div>;
+}
+
+function HealthRow({ label, value, tone }) {
+  return <div className="health-row"><span className={`health-icon ${tone}`} /> <span>{label}</span><strong>{value}</strong></div>;
+}
+
+createRoot(document.getElementById("root")).render(<App />);

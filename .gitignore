@@ -1,13 +1,17 @@
 .idea/
 .vscode/
 node_modules/
+.venv/
 dist/
 target/
 *.log
 .env
+.DS_Store
 .terraform/
 *.tfstate
 *.tfstate.*
+*.tfvars
+!terraform.tfvars.example
 
 # Python
 __pycache__/

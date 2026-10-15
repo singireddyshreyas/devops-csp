@@ -1,6 +1,6 @@
-replicaCount: 1
+replicaCount: 2
 ingress:
   enabled: true
-  host: taskboard.local
+  host: supportdesk.local
 hpa:
   enabled: false

@@ -1,10 +1,10 @@
 frontend:
-  image: ghcr.io/YOUR_ORG/taskboard-frontend
+  image: ghcr.io/singireddyshreyas/supportdesk-frontend
 backend:
-  image: ghcr.io/YOUR_ORG/taskboard-backend
+  image: ghcr.io/singireddyshreyas/supportdesk-backend
 replicaCount: 2
 ingress:
   enabled: true
-  host: taskboard.example.com
+  host: supportdesk.example.com
 hpa:
   enabled: true

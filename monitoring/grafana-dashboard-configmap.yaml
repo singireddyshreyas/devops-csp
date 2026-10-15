@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: supportdesk-grafana-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  supportdesk-dashboard.json: |
+    {
+      "title": "SupportDesk service health",
+      "uid": "supportdesk-health",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "15s",
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "HTTP request rate",
+          "targets": [{"expr": "sum(rate(http_requests_total[5m]))", "legendFormat": "requests/sec"}]
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "HTTP error rate",
+          "targets": [{"expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m]))", "legendFormat": "5xx errors/sec"}]
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "95th percentile request latency",
+          "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95"}]
+        }
+      ]
+    }

@@ -1,808 +1,376 @@
-# Session 21 — DevOps Final Capstone: TaskBoard (Python)
+# SupportDesk
 
-## 1. What we are building
+SupportDesk is a small helpdesk ticket-management platform built to demonstrate
+an end-to-end DevSecOps delivery workflow. A support team can create tickets,
+assign ownership, move tickets through a resolution lifecycle, and monitor the
+health of the API.
 
-TaskBoard is a small but realistic SaaS-style project management application:
-
-- React + Vite frontend
-- Responsive HTML/JSX + CSS UI
-- FastAPI Python backend
-- PostgreSQL database
-- SQLAlchemy ORM
-- Alembic database migrations
-- REST APIs
-- Pytest automated tests
-- Docker containers
-- GitHub Actions CI/CD
-- Trivy container security scanning
-- GitHub Container Registry
-- Terraform for AWS infrastructure
-- AWS VPC + EKS
-- Kubernetes
-- Helm
-- Ingress
-- HPA
-- Prometheus + Grafana
-- Health/readiness endpoints
-- Troubleshooting exercises
-
-The point is not to teach isolated tools. The point is to show how a real application travels from a developer laptop to a monitored Kubernetes environment.
+The application is intentionally small enough to understand during a live demo,
+but includes the same delivery controls used by a production-style service:
 
 ```text
-Developer
-   |
-   v
-Git / GitHub
-   |
-   v
-GitHub Actions
-   |-- pytest
-   |-- frontend build
-   |-- Docker build
-   |-- Trivy scan
-   `-- push images to GHCR
-              |
-              v
-        Terraform
-              |
-       AWS VPC + EKS
-              |
-              v
-            Helm
-              |
-      +-------+--------+
-      |                |
-   Frontend          Backend
-    React            FastAPI
-      |                |
-      +-------> PostgreSQL
-              |
-       Prometheus
-              |
-           Grafana
+React + Nginx → FastAPI → PostgreSQL
+       │           │
+       └────── Docker Compose (local)
+
+GitHub → Actions → pytest/frontend build → Docker → Trivy → GHCR
+                                           │
+                         Terraform → AWS VPC + EKS
+                                           │
+                         Helm → Kubernetes → Ingress/HPA
+                                           │
+                              Prometheus + Grafana
 ```
 
----
+## Technology stack
 
-## 2. Repository structure
+- **Frontend:** React, Vite, responsive CSS, Nginx
+- **Backend:** Python 3.12, FastAPI, SQLAlchemy, Pydantic
+- **Database:** PostgreSQL 16, Alembic migrations
+- **Quality:** Pytest, isolated SQLite test database
+- **Packaging:** Docker and Docker Compose
+- **CI/CD:** GitHub Actions, GitHub Container Registry
+- **Security:** Trivy image scanning for HIGH and CRITICAL vulnerabilities
+- **Infrastructure:** Terraform, AWS VPC, Amazon EKS
+- **Platform:** Kubernetes, Helm, Ingress, HPA
+- **Observability:** Prometheus, Grafana, Prometheus ServiceMonitor
+- **GitOps:** ArgoCD application manifest
+
+## Repository structure
 
 ```text
-session21-devops-capstone-final/
-├── frontend/                 # React application and CSS
-├── backend/                  # FastAPI application
-│   ├── app/                  # API, models, schemas, DB config
-│   ├── tests/                # Pytest tests
-│   └── alembic/              # DB migrations
-├── docker-compose.yml        # Full local stack
-├── terraform/                # AWS VPC + EKS infrastructure
-├── helm/taskboard/            # Kubernetes package
-├── k8s/                      # namespace/bootstrap manifests
-├── monitoring/               # Prometheus/Grafana values
-├── troubleshooting/          # deliberately broken manifests
-├── scripts/                  # load-test helpers
-└── .github/workflows/        # CI/CD
+backend/                 FastAPI service, migrations, and pytest tests
+frontend/                React application and unprivileged Nginx image
+helm/taskboard/          SupportDesk Helm chart
+k8s/                     Kubernetes bootstrap namespace
+terraform/               AWS VPC and EKS infrastructure
+monitoring/              Prometheus values and Grafana dashboard
+argocd/                  ArgoCD Application manifest
+troubleshooting/         Deliberately broken Kubernetes examples
+scripts/                 Small traffic generator for metrics demos
+demo/                    Presentation and evidence checklist
+.github/workflows/       CI/CD workflow
+docker-compose.yml       Full local stack
 ```
 
----
+## Application flow
 
-# PART A — UNDERSTAND THE APPLICATION
-
-## 3. Frontend
-
-The frontend is intentionally closer to a real SaaS dashboard than a tutorial CRUD page.
-
-It contains:
-
-- dark sidebar
-- workspace navigation
-- dashboard header
-- KPI cards
-- task table
-- status filters
-- priority badges
-- activity feed
-- pipeline indicator
-- create-task modal
-- responsive CSS
-- loading and backend-error states
-
-The browser calls `/api/tasks` and `/api/tasks/stats`.
-
-The browser does **not** need to know the internal backend hostname. Nginx and Kubernetes Ingress handle routing.
-
-## 4. Backend
-
-FastAPI exposes:
+Support agents work with tickets using these states:
 
 ```text
-GET    /
-GET    /health
-GET    /ready
-GET    /metrics
-
-GET    /api/tasks
-GET    /api/tasks/{id}
-POST   /api/tasks
-PUT    /api/tasks/{id}
-DELETE /api/tasks/{id}
-GET    /api/tasks/stats
+OPEN → IN_PROGRESS → WAITING → RESOLVED
 ```
 
-Swagger documentation is available at `/docs` when the backend is running.
+The dashboard supports filtering, ticket creation, status advancement, ticket
+deletion, priority/category labels, loading states, and an API error state.
 
-### Why `/health`?
+## REST API
 
-A container can be alive while its application is unhealthy. `/health` gives Kubernetes a cheap liveness check.
+When the backend is running, Swagger is available at `http://localhost:8000/docs`.
 
-### Why `/ready`?
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/` | Service metadata |
+| GET | `/health` | Liveness check |
+| GET | `/ready` | Database readiness check |
+| GET | `/metrics` | Prometheus metrics |
+| GET | `/api/tickets` | List tickets |
+| GET | `/api/tickets/{id}` | Read one ticket |
+| POST | `/api/tickets` | Create a ticket |
+| PUT | `/api/tickets/{id}` | Partially update a ticket |
+| DELETE | `/api/tickets/{id}` | Delete a ticket |
+| GET | `/api/tickets/stats` | Ticket counts by lifecycle state |
 
-Readiness answers a different question: **can this application serve traffic now?** The endpoint verifies database access before returning READY.
+Example ticket payload:
 
-### Why `/metrics`?
+```json
+{
+  "subject": "Cannot access the customer portal",
+  "description": "The portal returns a blank page after sign in.",
+  "priority": "HIGH",
+  "category": "TECHNICAL",
+  "requester": "Asha Customer",
+  "assignee": "Support Team"
+}
+```
 
-Prometheus needs machine-readable metrics. The FastAPI Prometheus instrumentator exposes request metrics for monitoring.
-
----
-
-# PART B — RUN IT LOCALLY
-
-## 5. Fastest method: Docker Compose
+## Run locally with Docker Compose
 
 Requirements:
 
-- Docker Desktop / Docker Engine
-- Docker Compose
+- Docker Desktop or Docker Engine with Compose
 
-Run:
+Start the complete stack:
 
 ```bash
 docker compose up --build
 ```
 
-Open:
+Open the application at <http://localhost:3000>. The API is available at:
 
-```text
-http://localhost:3000
-```
+- <http://localhost:8000/docs>
+- <http://localhost:8000/health>
+- <http://localhost:8000/ready>
+- <http://localhost:8000/metrics>
 
-Backend:
+The backend waits for PostgreSQL to become healthy, runs Alembic migrations,
+and then starts Uvicorn. Both application containers run as non-root users.
 
-```text
-http://localhost:8000/docs
-http://localhost:8000/health
-http://localhost:8000/metrics
-```
-
-Stop:
+Stop the stack:
 
 ```bash
 docker compose down
 ```
 
-Delete database volume too:
+Delete the local PostgreSQL volume as well:
 
 ```bash
 docker compose down -v
 ```
 
----
+## Run backend tests
 
-## 6. Run backend directly
-
-Requirements:
-
-- Python 3.12+
-- PostgreSQL
+The tests do not use the production PostgreSQL database. They override the
+FastAPI database dependency with an isolated in-memory SQLite database.
 
 ```bash
 cd backend
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pytest -v
 ```
 
-Set the database connection:
+The test suite covers health and readiness checks, ticket creation, listing,
+reading, updating, statistics, deletion, validation, and not-found behavior.
+
+## Run the frontend directly
 
 ```bash
-export DATABASE_URL='postgresql+psycopg://taskboard:taskboard@localhost:5432/taskboard'
+cd frontend
+npm ci
+npm run dev
 ```
 
-Run migrations:
+The Vite development server runs on port `5173` and proxies `/api` to a
+backend on `http://localhost:8000`.
+
+Build the production bundle:
 
 ```bash
-alembic upgrade head
+npm run build
 ```
 
-Start FastAPI:
+## CI/CD pipeline
 
-```bash
-uvicorn app.main:app --reload --port 8000
-```
-
-Test:
-
-```bash
-curl http://localhost:8000/health
-curl http://localhost:8000/api/tasks
-```
-
-Open:
+`.github/workflows/ci-cd.yml` runs for pull requests and pushes to `main`.
 
 ```text
-http://localhost:8000/docs
+test
+ ├─ pytest -v
+ └─ npm install && npm run build
+       ↓
+build-scan-push
+ ├─ build SupportDesk backend image
+ ├─ build SupportDesk frontend image
+ ├─ Trivy backend scan
+ ├─ Trivy frontend scan
+ └─ push SHA-tagged images to GHCR on main
+       ↓
+deploy (opt-in)
+ └─ helm upgrade --install against EKS
 ```
 
----
+Images are tagged with the Git commit SHA, for example:
 
-# PART C — TESTING
+```text
+ghcr.io/singireddyshreyas/supportdesk-backend:<commit-sha>
+ghcr.io/singireddyshreyas/supportdesk-frontend:<commit-sha>
+```
 
-## 7. Pytest
+The Trivy steps scan both images and use `exit-code: "1"` for HIGH and
+CRITICAL unfixed findings. The deploy job is intentionally opt-in: set the
+repository variable `ENABLE_EKS_DEPLOY=true` and add a base64-encoded
+`KUBE_CONFIG_DATA` secret only after the EKS cluster is ready.
+
+## Docker images
+
+Build locally:
 
 ```bash
-cd backend
-pytest -q
+docker build -t supportdesk-backend:local ./backend
+docker build -t supportdesk-frontend:local ./frontend
 ```
 
-Students should understand why tests happen **before Docker images are pushed**.
+The backend uses a Python slim image and a non-root `appuser`. The frontend is
+a multi-stage Node build served by `nginxinc/nginx-unprivileged` on port 8080.
 
-```text
-Bad code
-  ↓
-pytest fails
-  ↓
-Pipeline stops
-  ↓
-No broken image is promoted
-```
+## Terraform and AWS
 
-This is the first quality gate.
+Terraform provisions:
 
----
+- A VPC with two public and two private subnets.
+- A single NAT gateway for the private subnets.
+- An EKS control plane in the private subnets.
+- A managed node group with two desired `t3.medium` worker nodes.
 
-# PART D — GIT AND GITHUB
-
-## 8. Initialize Git
-
-```bash
-git init
-git add .
-git commit -m "initial TaskBoard application"
-git branch -M main
-git remote add origin <YOUR_GITHUB_REPO>
-git push -u origin main
-```
-
-Explain:
-
-- Git = version control
-- GitHub = remote collaboration/source platform
-- commit = immutable project checkpoint
-- branch = isolated line of development
-- pull request = controlled change review
-
----
-
-# PART E — DOCKER
-
-## 9. Backend Dockerfile
-
-The backend image:
-
-1. starts from Python
-2. installs dependencies
-3. copies Alembic
-4. copies application code
-5. creates a non-root user
-6. exposes port 8000
-7. runs migrations
-8. starts Uvicorn
-
-Build:
-
-```bash
-docker build -t taskboard-backend:local ./backend
-```
-
-Run with a reachable PostgreSQL instance:
-
-```bash
-docker run --rm -p 8000:8000 \
-  -e DATABASE_URL='postgresql+psycopg://taskboard:taskboard@host.docker.internal:5432/taskboard' \
-  taskboard-backend:local
-```
-
-## 10. Frontend Dockerfile
-
-The frontend uses a multi-stage build:
-
-```text
-Node
-  ↓
-npm build
-  ↓
-static dist/
-  ↓
-Nginx runtime image
-```
-
-This keeps build tooling out of the final runtime image.
-
-Build:
-
-```bash
-docker build -t taskboard-frontend:local ./frontend
-```
-
----
-
-# PART F — CI/CD
-
-## 11. GitHub Actions pipeline
-
-The workflow has three conceptual stages:
-
-```text
-TEST
- ↓
-BUILD + SECURITY SCAN + PUSH
- ↓
-DEPLOY
-```
-
-### Test job
-
-- checkout
-- setup Python
-- install requirements
-- run pytest
-- setup Node
-- build React frontend
-
-### Build/scan/push job
-
-- build backend image
-- build frontend image
-- scan both with Trivy
-- push to GHCR
-
-### Deploy job
-
-- install Helm
-- configure kubectl
-- run `helm upgrade --install`
-
-The image tag is the Git commit SHA.
-
-That means:
-
-```text
-commit A → image A
-commit B → image B
-commit C → image C
-```
-
-This gives traceability from production back to source code.
-
----
-
-# PART G — SECURITY SCANNING
-
-## 12. Trivy
-
-The pipeline scans container images for HIGH and CRITICAL vulnerabilities.
-
-A security scanner is not a magic guarantee of security. It is one automated control in the pipeline.
-
-Students should understand:
-
-```text
-SAST
-Dependency scanning
-Secret scanning
-Container scanning
-Runtime security
-```
-
-These are different security layers.
-
----
-
-# PART H — TERRAFORM
-
-## 13. Why Terraform?
-
-Kubernetes only manages workloads. It does not create the AWS network and EKS infrastructure in this project.
-
-Terraform creates:
-
-```text
-AWS
- ├── VPC
- ├── public subnets
- ├── private subnets
- ├── NAT gateway
- └── EKS cluster
-       └── managed worker nodes
-```
-
-Go to Terraform:
+Terraform is not executed automatically because it creates billable resources.
+Install Terraform and configure AWS credentials outside the repository first.
 
 ```bash
 cd terraform
+cp terraform.tfvars.example terraform.tfvars
 terraform init
+terraform fmt -recursive
+terraform validate
 terraform plan
 terraform apply
+aws eks update-kubeconfig --region ap-south-1 --name supportdesk-eks
 ```
 
-The default region is `ap-south-1`.
-
-After EKS is created, configure kubectl using the command shown by AWS/Terraform output.
-
-Destroy when finished:
+When the demonstration is complete, remove the infrastructure:
 
 ```bash
 terraform destroy
 ```
 
-### Important teaching point
+Never commit AWS access keys, secret keys, kubeconfigs, or a real
+`terraform.tfvars` file.
 
-Terraform is **Infrastructure as Code**.
+## Kubernetes and Helm
 
-Instead of manually clicking:
+The Helm chart is the canonical application deployment. It creates PostgreSQL,
+backend and frontend Deployments, ClusterIP Services, a PVC, an Ingress, an
+HPA, and a Prometheus ServiceMonitor.
 
-```text
-AWS Console → VPC → Subnet → EKS → Nodes...
-```
-
-we describe infrastructure in code and let Terraform reconcile the desired state.
-
----
-
-# PART I — KUBERNETES
-
-## 14. Namespace
+Install the namespace and chart:
 
 ```bash
 kubectl apply -f k8s/namespace.yaml
+helm lint ./helm/taskboard
+helm upgrade --install supportdesk ./helm/taskboard \
+  --namespace supportdesk \
+  --create-namespace \
+  -f helm/taskboard/values-dev.yaml \
+  --wait
 ```
 
-A namespace provides logical isolation for the application.
-
-## 15. Helm
-
-Instead of maintaining many manually edited YAML files, Helm turns the Kubernetes deployment into a reusable package.
+Inspect the release:
 
 ```bash
-helm upgrade --install taskboard ./helm/taskboard \
-  --namespace taskboard \
-  --create-namespace
+kubectl get pods -n supportdesk
+kubectl get svc -n supportdesk
+kubectl get ingress -n supportdesk
+kubectl get hpa -n supportdesk
+helm list -n supportdesk
 ```
 
-Important Helm concepts:
+The development Ingress host is `supportdesk.local`. Add the Ingress controller
+address to `/etc/hosts` when using a local cluster, or use the external address
+provided by the controller in EKS.
 
-- Chart
-- values
-- templates
-- release
-- upgrade
-- rollback
-
----
-
-# PART J — KUBERNETES COMPONENTS
-
-## 16. Deployment
-
-The Deployment manages backend/frontend Pods.
-
-If a Pod dies:
-
-```text
-Deployment
-   ↓
-creates replacement Pod
-```
-
-## 17. Service
-
-Pods are ephemeral. A Service provides stable networking.
-
-```text
-Frontend → backend Service → backend Pods
-```
-
-## 18. PostgreSQL
-
-For the classroom/local Kubernetes demo, PostgreSQL is deployed inside the cluster with a PVC.
-
-For production AWS architecture, students should understand the tradeoff between running PostgreSQL in Kubernetes and using a managed database such as Amazon RDS.
-
----
-
-# PART K — INGRESS
-
-## 19. Ingress
-
-The application has two logical routes:
-
-```text
-/taskboard.local/
-      ↓
-React frontend
-
-/taskboard.local/api
-      ↓
-FastAPI backend
-```
-
-Enable ingress with the dev values:
+The HPA requires a metrics provider such as Metrics Server. Normal health
+requests may not create enough CPU load to scale; use the helper below for a
+controlled demonstration:
 
 ```bash
-helm upgrade --install taskboard ./helm/taskboard \
-  -n taskboard \
-  -f helm/taskboard/values-dev.yaml
+URL=http://supportdesk.local/api/tickets ./scripts/load-test.sh
 ```
 
-Students should understand that an Ingress resource is only configuration. An Ingress Controller must actually implement it.
+## ArgoCD GitOps
 
----
-
-# PART L — HPA
-
-## 20. Horizontal Pod Autoscaler
-
-The HPA can scale the backend based on CPU utilization.
-
-```text
-low traffic
-   ↓
-2 Pods
-
-high CPU
-   ↓
-3 Pods
-   ↓
-4 Pods
-   ↓
-...
-```
-
-Inspect:
+`argocd/supportdesk-application.yaml` points ArgoCD at the Helm chart on the
+`main` branch:
 
 ```bash
-kubectl get hpa -n taskboard
+kubectl apply -f argocd/supportdesk-application.yaml
+argocd app get supportdesk
+argocd app sync supportdesk
 ```
 
-HPA requires resource requests and a metrics provider such as Metrics Server.
+The example uses `dev` image tags for an immediately understandable manifest.
+For a real GitOps deployment, replace both tags with a published commit SHA
+from GHCR before syncing. If GHCR packages are private, configure an image pull
+secret in the `supportdesk` namespace.
 
-A normal health request may not create enough CPU pressure to demonstrate scaling. For a classroom demo, use a controlled load generator and watch the metrics.
+## Prometheus and Grafana
 
----
+Install the Prometheus/Grafana stack using the supplied values:
 
-# PART M — MONITORING
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+helm upgrade --install kube-prometheus-stack \
+  prometheus-community/kube-prometheus-stack \
+  --namespace monitoring --create-namespace \
+  -f monitoring/prometheus-values.yaml
+```
 
-## 21. Prometheus
+Apply the dashboard ConfigMap after the monitoring namespace exists:
 
-Prometheus collects metrics from the FastAPI `/metrics` endpoint.
+```bash
+kubectl apply -f monitoring/grafana-dashboard-configmap.yaml
+```
 
-The ServiceMonitor tells the Prometheus Operator what to scrape.
+The SupportDesk backend ServiceMonitor scrapes `/metrics`. Verify the endpoint
+and Prometheus target:
 
-## 22. Grafana
+```bash
+curl http://<backend-address>/metrics
+kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090
+```
 
-Grafana visualizes the collected metrics.
+The dashboard source is also stored in `monitoring/supportdesk-dashboard.json`.
+It includes request rate, error rate, p95 latency, and recent request count
+panels.
 
-Useful questions:
+## Troubleshooting exercises
 
-- How many HTTP requests are arriving?
-- Which endpoint is slow?
-- Are errors increasing?
-- Is the application receiving traffic?
-- Is CPU increasing?
-- Is HPA scaling?
-
----
-
-# PART N — TROUBLESHOOTING LAB
-
-## 23. Broken image
-
-Apply:
+The deliberately broken manifests are safe teaching exercises:
 
 ```bash
 kubectl apply -f troubleshooting/broken-image.yaml
+kubectl get pods -n supportdesk
+kubectl describe pod -n supportdesk <pod-name>
+kubectl get events -n supportdesk --sort-by=.lastTimestamp
 ```
 
-Then:
-
-```bash
-kubectl get pods
-kubectl describe pod <pod-name>
-kubectl get events --sort-by=.lastTimestamp
-```
-
-Expected investigation:
-
-```text
-ImagePullBackOff
-      ↓
-describe Pod
-      ↓
-wrong image/tag
-      ↓
-fix deployment
-```
-
-## 24. Broken Service
-
-Apply:
+For the broken Service exercise:
 
 ```bash
 kubectl apply -f troubleshooting/broken-service.yaml
+kubectl get svc -n supportdesk
+kubectl get endpoints -n supportdesk
+kubectl get pods -n supportdesk --show-labels
 ```
 
-Investigate:
+The expected lessons are `ImagePullBackOff` caused by an invalid image/tag and
+an empty Service endpoint set caused by a selector that matches no Pods.
 
-```bash
-kubectl get svc
-kubectl get endpoints
-kubectl get pods --show-labels
-```
+## Known limitations
 
-The key lesson is that a Service selects Pods using labels.
+- PostgreSQL is deployed inside Kubernetes for the classroom demonstration. A
+  production AWS architecture should normally use Amazon RDS or another
+  managed database.
+- The example Terraform stack uses one NAT gateway to reduce cost; production
+  high availability would normally use one NAT gateway per availability zone.
+- The demo dashboard is intentionally small and does not provide authentication
+  or role-based access control.
+- The ArgoCD manifest requires the GHCR images to exist and may need image pull
+  credentials depending on package visibility.
+- AWS resources are not created by CI automatically; this keeps cloud spending
+  and credentials under the operator's control.
 
-No matching labels = no endpoints = no traffic.
+## Evidence checklist
 
----
+The rubric evidence should include:
 
-# PART O — FINAL DEMO
-
-### 1. Application
-
-Open TaskBoard and create a task.
-
-### 2. API
-
-Open FastAPI Swagger:
-
-```text
-/docs
-```
-
-Create/read/update/delete a task.
-
-### 3. Database
-
-Show the PostgreSQL `tasks` table.
-
-### 4. Git
-
-Make a small application change and commit it.
-
-### 5. CI
-
-Push to GitHub and show tests running.
-
-### 6. Docker
-
-Show the two images.
-
-### 7. Security
-
-Show Trivy scanning the images.
-
-### 8. Registry
-
-Show the images in GHCR.
-
-### 9. Terraform
-
-Show the AWS infrastructure code.
-
-### 10. Kubernetes
-
-```bash
-kubectl get pods -n taskboard
-kubectl get svc -n taskboard
-```
-
-### 11. Helm
-
-```bash
-helm list -n taskboard
-```
-
-### 12. Ingress
-
-Open the application through the Ingress hostname.
-
-### 13. HPA
-
-```bash
-kubectl get hpa -n taskboard
-```
-
-### 14. Monitoring
-
-Show Prometheus and Grafana.
-
-### 15. Failure simulation
-
-Break a Service/image and troubleshoot it live.
-
----
-
-# FINAL STUDENT PROJECT
-
-Possible domains:
-
-- CRM
-- Inventory management
-- Appointment booking
-- Helpdesk
-- Ecommerce administration
-- Clinic management
-- Restaurant management
-- Employee management
-- Learning management system
-
-Minimum requirements:
-
-### Application
-
-- frontend
-- backend
-- PostgreSQL
-- minimum 4 REST APIs
-- responsive UI
-
-### Engineering
-
-- Git/GitHub
-- automated tests
-- Docker
-
-### DevOps
-
-- GitHub Actions
-- security scan
-- container registry
-- Terraform
-- Kubernetes
-- Helm
-- Ingress
-- HPA
-- Prometheus/Grafana
-
-### Final presentation
-
-Each student must demonstrate:
-
-```text
-Application
-  ↓
-Git commit
-  ↓
-CI pipeline
-  ↓
-Docker image
-  ↓
-Security scan
-  ↓
-Registry
-  ↓
-Terraform infrastructure
-  ↓
-Kubernetes deployment
-  ↓
-Helm
-  ↓
-Ingress
-  ↓
-Autoscaling
-  ↓
-Monitoring
-  ↓
-Troubleshooting
-```
-
-That is the actual objective of Session 21.
+- Browser screenshot showing SupportDesk and a created ticket.
+- `pytest -v` with all tests passing.
+- `docker compose up --build` and the browser at port 3000.
+- A green GitHub Actions run and GHCR packages with SHA tags.
+- Trivy output for both images.
+- Terraform plan, AWS VPC/EKS, and `terraform destroy` output.
+- Kubernetes Pods, Services, Ingress, HPA, and Helm release.
+- `/metrics`, Prometheus target `UP`, and a populated Grafana panel.
+- The final presentation video and at least eight-slide deck under `demo/`.

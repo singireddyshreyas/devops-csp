@@ -1,5 +1,9 @@
 grafana:
   enabled: true
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
 prometheus:
   prometheusSpec:
     serviceMonitorSelectorNilUsesHelmValues: false
