@@ -8,3 +8,6 @@ ingress:
   host: supportdesk.example.com
 hpa:
   enabled: true
+monitoring:
+  serviceMonitor:
+    enabled: true

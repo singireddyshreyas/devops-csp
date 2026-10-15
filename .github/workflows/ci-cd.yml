@@ -130,6 +130,7 @@ jobs:
           helm upgrade --install supportdesk ./helm/taskboard \
             --namespace supportdesk \
             --create-namespace \
+            -f ./helm/taskboard/values-prod.yaml \
             --set-string backend.image="${{ steps.images.outputs.backend }}" \
             --set-string backend.tag="${GITHUB_SHA}" \
             --set-string frontend.image="${{ steps.images.outputs.frontend }}" \

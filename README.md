@@ -188,8 +188,10 @@ ghcr.io/singireddyshreyas/supportdesk-backend:<commit-sha>
 ghcr.io/singireddyshreyas/supportdesk-frontend:<commit-sha>
 ```
 
-The Trivy steps scan both images and use `exit-code: "1"` for HIGH and
-CRITICAL unfixed findings. The deploy job is intentionally opt-in: set the
+The Trivy steps scan both images and use `exit-code: "1"` for HIGH or CRITICAL
+findings with an upstream fix available. Unfixed findings remain visible in the
+scan output but do not block promotion because there is no remediation to apply.
+The deploy job is intentionally opt-in: set the
 repository variable `ENABLE_EKS_DEPLOY=true` and add a base64-encoded
 `KUBE_CONFIG_DATA` secret only after the EKS cluster is ready.
 
@@ -241,7 +243,59 @@ Never commit AWS access keys, secret keys, kubeconfigs, or a real
 
 The Helm chart is the canonical application deployment. It creates PostgreSQL,
 backend and frontend Deployments, ClusterIP Services, a PVC, an Ingress, an
-HPA, and a Prometheus ServiceMonitor.
+HPA, and (when enabled) a Prometheus ServiceMonitor.
+
+The cluster must have the platform dependencies installed before the production
+values are used:
+
+```bash
+# Local Minikube option
+minikube addons enable ingress
+minikube addons enable metrics-server
+
+# Generic Kubernetes / EKS option for NGINX Ingress and Metrics Server
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
+helm repo update
+helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx --create-namespace
+helm upgrade --install metrics-server metrics-server/metrics-server \
+  --namespace kube-system
+```
+
+For EKS, configure the AWS Load Balancer Controller or the NGINX controller
+according to the cluster networking choice. The chart uses
+`ingressClassName: nginx`. The HPA requires Metrics Server, and PostgreSQL's
+PVC requires a default StorageClass. On EKS, install the EBS CSI driver and
+set `postgres.storageClass` to the approved StorageClass such as `gp3`.
+
+For an AWS-independent local rehearsal, Minikube can provide the same
+Kubernetes interfaces:
+
+```bash
+minikube start --driver=docker --memory=4096 --cpus=2
+minikube addons enable ingress
+minikube addons enable metrics-server
+minikube image load supportdesk-backend:local
+minikube image load supportdesk-frontend:local
+helm upgrade --install supportdesk ./helm/taskboard \
+  --namespace supportdesk --create-namespace \
+  -f helm/taskboard/values-dev.yaml \
+  --set-string backend.image=supportdesk-backend \
+  --set-string backend.tag=local \
+  --set-string frontend.image=supportdesk-frontend \
+  --set-string frontend.tag=local \
+  --wait
+```
+
+Render and validate the chart without a cluster:
+
+```bash
+helm template supportdesk ./helm/taskboard \
+  --namespace supportdesk \
+  -f helm/taskboard/values-dev.yaml \
+  | kubeconform -strict -summary -ignore-missing-schemas
+```
 
 Install the namespace and chart:
 
@@ -252,6 +306,18 @@ helm upgrade --install supportdesk ./helm/taskboard \
   --namespace supportdesk \
   --create-namespace \
   -f helm/taskboard/values-dev.yaml \
+  --wait
+```
+
+The development values intentionally disable the ServiceMonitor so the chart
+can be installed before Prometheus Operator CRDs exist. Install Prometheus
+first and use `values-prod.yaml` when the ServiceMonitor should be created:
+
+```bash
+helm upgrade --install supportdesk ./helm/taskboard \
+  --namespace supportdesk \
+  --create-namespace \
+  -f helm/taskboard/values-prod.yaml \
   --wait
 ```
 
@@ -279,19 +345,26 @@ URL=http://supportdesk.local/api/tickets ./scripts/load-test.sh
 
 ## ArgoCD GitOps
 
-`argocd/supportdesk-application.yaml` points ArgoCD at the Helm chart on the
-`main` branch:
+`argocd/supportdesk-application.yaml` points ArgoCD at the production Helm
+values on the `main` branch. Install Prometheus Operator before syncing so the
+ServiceMonitor CRD exists:
 
 ```bash
+kubectl create namespace argocd
+kubectl apply -n argocd \
+  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl wait --for=condition=available deployment/argocd-server \
+  -n argocd --timeout=5m
 kubectl apply -f argocd/supportdesk-application.yaml
 argocd app get supportdesk
 argocd app sync supportdesk
 ```
 
-The example uses `dev` image tags for an immediately understandable manifest.
-For a real GitOps deployment, replace both tags with a published commit SHA
-from GHCR before syncing. If GHCR packages are private, configure an image pull
-secret in the `supportdesk` namespace.
+The example uses `dev` image tags as placeholders. Before a real GitOps sync,
+replace both tags with the same published commit SHA from GHCR. CI publishes
+only SHA-tagged images, so ArgoCD must reference a real SHA before it can start
+the application. If GHCR packages are private, configure an image pull secret
+in the `supportdesk` namespace without committing the token.
 
 ## Prometheus and Grafana
 

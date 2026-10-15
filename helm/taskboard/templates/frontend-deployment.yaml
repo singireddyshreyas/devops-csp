@@ -14,6 +14,7 @@ spec:
       containers:
       - name: frontend
         image: "{{ .Values.frontend.image }}:{{ .Values.frontend.tag }}"
+        imagePullPolicy: {{ .Values.frontend.imagePullPolicy }}
         ports: [{containerPort: 8080}]
         env:
         - name: BACKEND_HOST

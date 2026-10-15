@@ -1,9 +1,11 @@
 frontend:
   image: ghcr.io/singireddyshreyas/supportdesk-frontend
   tag: dev
+  imagePullPolicy: IfNotPresent
 backend:
   image: ghcr.io/singireddyshreyas/supportdesk-backend
   tag: dev
+  imagePullPolicy: IfNotPresent
 replicaCount: 2
 namespace: supportdesk
 imagePullSecrets: []
@@ -12,6 +14,7 @@ postgres:
   database: supportdesk
   username: supportdesk
   password: supportdesk
+  storageClass: ""
 ingress:
   enabled: false
   host: supportdesk.local

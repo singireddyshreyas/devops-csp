@@ -10,6 +10,8 @@ spec:
     targetRevision: main
     path: helm/taskboard
     helm:
+      valueFiles:
+        - values-prod.yaml
       parameters:
         - name: backend.image
           value: ghcr.io/singireddyshreyas/supportdesk-backend

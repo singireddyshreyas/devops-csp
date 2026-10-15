@@ -11,4 +11,6 @@ Required final files:
 - `supportdesk-slides.pptx` or `supportdesk-slides.pdf` — minimum eight slides.
 
 Before recording, collect the screenshots and URLs listed in the root
-private kubeconfigs, or AWS access keys.
+`README.md` evidence checklist. Use redacted screenshots and public URLs only.
+Never record, upload, or commit credentials, tokens, private kubeconfigs, AWS
+access keys, or other secrets.

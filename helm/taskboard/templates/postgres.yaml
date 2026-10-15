@@ -39,4 +39,7 @@ kind: PersistentVolumeClaim
 metadata: {name: supportdesk-postgres-data}
 spec:
   accessModes: [ReadWriteOnce]
+  {{- with .Values.postgres.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
   resources: {requests: {storage: 5Gi}}
