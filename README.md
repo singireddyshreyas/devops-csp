@@ -360,11 +360,13 @@ argocd app get supportdesk
 argocd app sync supportdesk
 ```
 
-The example uses `dev` image tags as placeholders. Before a real GitOps sync,
-replace both tags with the same published commit SHA from GHCR. CI publishes
-only SHA-tagged images, so ArgoCD must reference a real SHA before it can start
-the application. If GHCR packages are private, configure an image pull secret
-in the `supportdesk` namespace without committing the token.
+`values.yaml` keeps `dev` image tags as local placeholders. The checked-in
+ArgoCD Application pins both images to the same published commit SHA for the
+current demonstration. After each successful GHCR publish, update both
+ArgoCD parameters to the new SHA before syncing. CI publishes only SHA-tagged
+images, so ArgoCD must reference a real SHA before it can start the
+application. If GHCR packages are private, configure an image pull secret in
+the `supportdesk` namespace without committing the token.
 
 ## Prometheus and Grafana
 

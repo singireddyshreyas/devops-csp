@@ -17,11 +17,10 @@ spec:
           value: ghcr.io/singireddyshreyas/supportdesk-backend
         - name: frontend.image
           value: ghcr.io/singireddyshreyas/supportdesk-frontend
-        # Replace both dev values with a published commit SHA for a demo sync.
         - name: backend.tag
-          value: dev
+          value: 23a4748d4068567ae5288cc88a392572516f9b3b
         - name: frontend.tag
-          value: dev
+          value: 23a4748d4068567ae5288cc88a392572516f9b3b
   destination:
     server: https://kubernetes.default.svc
     namespace: supportdesk
