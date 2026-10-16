@@ -1,3 +1,6 @@
+alertmanager:
+  enabled: false
+
 grafana:
   enabled: true
   sidecar:
@@ -8,3 +11,9 @@ prometheus:
   prometheusSpec:
     serviceMonitorSelectorNilUsesHelmValues: false
     serviceMonitorNamespaceSelector: {}
+
+kubeStateMetrics:
+  enabled: false
+
+nodeExporter:
+  enabled: false
