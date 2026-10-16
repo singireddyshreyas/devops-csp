@@ -66,7 +66,7 @@ jobs:
         run: docker build -t "${{ steps.images.outputs.frontend }}:${GITHUB_SHA}" ./frontend
 
       - name: Scan backend image with Trivy
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ steps.images.outputs.backend }}:${{ github.sha }}
           severity: HIGH,CRITICAL
@@ -74,7 +74,7 @@ jobs:
           exit-code: "1"
 
       - name: Scan frontend image with Trivy
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ steps.images.outputs.frontend }}:${{ github.sha }}
           severity: HIGH,CRITICAL
