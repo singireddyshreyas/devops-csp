@@ -214,7 +214,10 @@ Terraform provisions:
 - A VPC with two public and two private subnets.
 - A single NAT gateway for the private subnets.
 - An EKS control plane in the private subnets.
-- A managed node group with two desired `t3.medium` worker nodes.
+- A managed node group with three desired `t3.small` worker nodes. The smaller
+  instance type keeps the classroom deployment eligible for the current AWS
+  account's Free Tier restrictions; EKS control plane and NAT gateway charges
+  still apply.
 
 Terraform is not executed automatically because it creates billable resources.
 Install Terraform and configure AWS credentials outside the repository first.

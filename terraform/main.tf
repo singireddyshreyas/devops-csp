@@ -9,6 +9,16 @@ module "vpc" {
   private_subnets = ["10.20.1.0/24", "10.20.2.0/24"]
   public_subnets  = ["10.20.101.0/24", "10.20.102.0/24"]
 
+  private_subnet_tags = {
+    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+    "kubernetes.io/role/internal-elb"           = "1"
+  }
+
+  public_subnet_tags = {
+    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+    "kubernetes.io/role/elb"                    = "1"
+  }
+
   enable_nat_gateway = true
   single_nat_gateway = true
 }
@@ -27,10 +37,10 @@ module "eks" {
 
   eks_managed_node_groups = {
     main = {
-      instance_types = ["t3.medium"]
+      instance_types = ["t3.small"]
       min_size       = 2
       max_size       = 4
-      desired_size   = 2
+      desired_size   = 3
     }
   }
 }
