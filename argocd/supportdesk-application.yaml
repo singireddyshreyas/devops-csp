@@ -18,9 +18,13 @@ spec:
         - name: frontend.image
           value: ghcr.io/singireddyshreyas/supportdesk-frontend
         - name: backend.tag
-          value: 23a4748d4068567ae5288cc88a392572516f9b3b
+          value: ad160c3b96179586d17a4f68f6fce7afa203d9dc
         - name: frontend.tag
-          value: 23a4748d4068567ae5288cc88a392572516f9b3b
+          value: ad160c3b96179586d17a4f68f6fce7afa203d9dc
+        - name: ingress.host
+          value: a6851dab66b604e8dad528d9eb9b5843-499584160.ap-south-1.elb.amazonaws.com
+        - name: postgres.storageClass
+          value: gp3
   destination:
     server: https://kubernetes.default.svc
     namespace: supportdesk
